@@ -1,7 +1,6 @@
 import json
 
-reacts = set()
-
+# https://apps.timwhitlock.info/emoji/tables/unicode
 emojiNames = {
     '\u00f0\u009f\u0091\u008e': 'thumbs_down',
     '\u00f0\u009f\u0098\u00a0': 'angry',
@@ -9,7 +8,7 @@ emojiNames = {
     '\u00f0\u009f\u0091\u008d': 'thumbs_up',
     '\u00f0\u009f\u0098\u0086': 'funny',
     '\u00f0\u009f\u0098\u00a2': 'cry',
-    '\u00f0\u009f\u0098\u00ae': 'surprise'
+    '\u00f0\u009f\u0098\u00ae': 'surprise',
 }
 
 """
@@ -33,11 +32,16 @@ reacts = dict((name, {}) for name in names)
 for name in reacts.keys():
     reacts[name] = dict((emojiNames[emoji], 0) for emoji in emojiNames.keys())
 
+# Keep track of last send
+lastSender = msgs['messages'][0]['sender_name']
+lastTime = msgs['messages'][0]['timestamp_ms']
+
 # Parse all messages
-for msg in msgs['messages']:
+for msg in reversed(msgs['messages']):
 
     sender = msg['sender_name']
     text = msg['content']
+    time = msg['timestamp_ms']
 
     # Record for number of messages
     numMsgs[sender] += 1
@@ -53,13 +57,25 @@ for msg in msgs['messages']:
         emoji = emojiNames[reaction['reaction']]
         reacts[actor][emoji] += 1
 
+    # Record response times
+    if lastSender != sender:
+        responseTimes[sender].append(time - lastTime)
+    lastSender = sender
+    lastTime = time
+
 # Calculate average length
 avgMsgLength = {}
 for name in msgLengths:
     avgMsgLength[name] = sum(msgLengths[name])/len(msgLengths[name])
+
+# Calculate average time
+avgResponseTime = {}
+for name in responseTimes:
+    avgResponseTime[name] = sum(responseTimes[name])/len(responseTimes[name])
 
 print(numMsgs)
 print(avgMsgLength)
 for name in reacts.keys():
     print(name)
     print(reacts[name])
+print(avgResponseTime)
