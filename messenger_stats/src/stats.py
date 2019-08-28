@@ -9,6 +9,7 @@ emojiNames = {
     '\u00f0\u009f\u0098\u0086': 'funny',
     '\u00f0\u009f\u0098\u00a2': 'cry',
     '\u00f0\u009f\u0098\u00ae': 'surprise',
+    '\u00e2\u009d\u00a4': 'heart'
 }
 
 """
@@ -40,7 +41,7 @@ lastTime = msgs['messages'][0]['timestamp_ms']
 for msg in reversed(msgs['messages']):
 
     sender = msg['sender_name']
-    text = msg['content']
+    text = msg.get('content', '')
     time = msg['timestamp_ms']
 
     # Record for number of messages
