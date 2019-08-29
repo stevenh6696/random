@@ -1,0 +1,5 @@
+# All
+venv/
+
+# messenger_stats
+message.json
