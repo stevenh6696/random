@@ -1,5 +1,6 @@
 # All
 venv/
+.env
 
 # messenger_stats
 message.json
