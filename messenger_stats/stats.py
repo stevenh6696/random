@@ -1,4 +1,6 @@
 import json
+import string
+from wordcloud import WordCloud
 
 # https://apps.timwhitlock.info/emoji/tables/unicode
 emojiNames = {
@@ -12,12 +14,12 @@ emojiNames = {
     '\u00e2\u009d\u00a4': 'heart'
 }
 
-"""
-Open file and return as JSON
-"""
+
+# Open file and return as JSON
 def get_msgs():
     with open('./message.json') as jsonFile:
         return json.load(jsonFile)
+
 
 msgs = get_msgs()
 
@@ -29,6 +31,7 @@ print("Participants:", ", ".join(names))
 responseTimes = dict((name, []) for name in names)
 numMsgs = dict((name, 0) for name in names)
 msgLengths = dict((name, []) for name in names)
+msgText = dict((name, '') for name in names)
 reacts = dict((name, {}) for name in names)
 for name in reacts.keys():
     reacts[name] = dict((emojiNames[emoji], 0) for emoji in emojiNames.keys())
@@ -64,6 +67,9 @@ for msg in reversed(msgs['messages']):
     lastSender = sender
     lastTime = time
 
+    # Record message text without punctuation
+    msgText[sender] += text.translate(str.maketrans('', '', string.punctuation))
+
 # Calculate average length
 avgMsgLength = {}
 for name in msgLengths:
@@ -80,3 +86,10 @@ for name in reacts.keys():
     print(name)
     print(reacts[name])
 print(avgResponseTime)
+
+for name in msgText:
+    wordcloud = WordCloud().generate(msgText[name])
+    image = wordcloud.to_image()
+    image.save(name + '.jpg')
+
+# https://github.com/amueller/word_cloud/blob/master/examples/simple.py
