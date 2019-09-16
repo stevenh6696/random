@@ -1,5 +1,6 @@
 import json
 import os
+import requests
 from flask import Flask, request, make_response
 
 app = Flask(__name__)
@@ -35,15 +36,31 @@ def asana_webhook():
         # Find new events
         for event in request.json.get('events'):
 
-            # Check user, action, resource type, task, and parent type
+            # Check user, resource type, parent type, and task ID
             user = event.get('user', {}).get('gid')
-            action = event.get('action')
-            resourceType = event.get('resource', {}).get('resource_type')
-            task = event.get('resource', {}).get('gid')
-            parentType = event.get('parent').get('resource_type') if event.get('parent') else None
+            resourceSubtype = event.get('resource', {}).get('resource_subtype')
+            isTask = event.get('parent').get('resource_type') if event.get('parent') else None
+            task = event.get('parent').get('gid') if event.get('parent') else None
 
-            if user == me and action == 'added' and resourceType == 'task' and parentType == 'project':
-                print(event)
+            if user == me and resourceSubtype == 'added_to_project' and isTask == 'task':
+
+                # Log new task
+                print('Asana_webhook: new task found:', task)
+
+                # Set up post request
+                url = 'https://app.asana.com/api/1.0/tasks/' + task
+                data = {'assignee': 'me'}
+                headers = {'Authorization': 'Bearer ' + token}
+
+                # Assign to self
+                result = requests.put(url, data=data, headers=headers)
+
+                # Print result
+                # TODO: log error
+                if result.ok:
+                    print('Asana_webhook: new task assigned:', result.status_code)
+                else:
+                    print('Asana_webhook: failed to assign task:', task, result.status_code)
 
         return '', 200
 
