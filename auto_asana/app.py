@@ -1,6 +1,10 @@
+import json
 import os
 import requests
 from flask import Flask, request, make_response
+from googleapiclient.discovery import build
+from google.oauth2.service_account import Credentials
+
 
 app = Flask(__name__)
 secrets = []
@@ -34,7 +38,7 @@ def asana_webhook():
         for event in request.json.get('events'):
 
             # Check user, resource type, parent type, and task ID
-            user = event.get('user', {}).get('gid')
+            user = event.get('user', {}).get('gid') if event.get('user') else None
             resourceSubtype = event.get('resource', {}).get('resource_subtype')
             isTask = event.get('parent').get('resource_type') if event.get('parent') else None
             task = event.get('parent').get('gid') if event.get('parent') else None
@@ -56,9 +60,9 @@ def asana_webhook():
                 # Print result
                 # TODO: log error
                 if result.ok:
-                    print('Asana_webhook: new task assigned:', result.status_code)
+                    print('Asana_webhook: new task assigned:', task)
                 else:
-                    print('Asana_webhook: failed to assign task:', task, result.status_code)
+                    print('Asana_webhook: failed to assign task:', task, result.status_code, result.json())
 
         return '', 200
 
@@ -84,38 +88,72 @@ def fb_webhook():
     # Process new events
     elif request.method == 'POST' and request.json.get('entry'):
 
+        # TODO: verify request
+
         # Process each event
-        for event in request.json.get('entry'):
+        changes = [change for event in request.json.get('entry') for change in event.get('changes')]
 
-            # Process each change
-            for change in event.get('changes'):
+        # Process each change
+        for change in changes:
 
-                # Get event ID, action, and field
-                event = change.get('value', {}).get('event_id')
-                verb = change.get('value', {}).get('verb')
-                field = change.get('field')
+            # Get event ID, action, and field
+            event = change.get('value', {}).get('event_id')
+            verb = change.get('value', {}).get('verb')
+            field = change.get('field')
 
-                # Confirm expected fields
-                if event and verb == 'accept' and field == 'events':
+            # Confirm expected fields before continuing
+            if not event or verb != 'accept' or field != 'events':
+                continue
 
-                    # Log new event
-                    print('Fb_webhook: new event found:', event)
+            # Log new event
+            print('Fb_webhook: new event found:', event)
 
-                    # Set up get request
-                    url = 'https://graph.facebook.com/v3.3/' + event
-                    headers = {'Authorization': 'Bearer ' + os.environ['FB_USER']}
+            # Set up get request
+            # TODO: refresh token
+            url = 'https://graph.facebook.com/v3.3/' + event
+            headers = {'Authorization': 'Bearer ' + os.environ['FB_USER']}
 
-                    # Query for more information about the event
-                    result = requests.get(url, headers=headers)
+            # Query for more information about the event
+            result = requests.get(url, headers=headers)
 
-                    # Process the query
-                    if result.ok:
-                        print('Fb_webhook: event logged:', result.json())
-                    else:
-                        print('Fb_webhook: event failed:', event)
+            # Process the query
+            # TODO: log error
+            if result.ok:
+
+                # Log success
+                print('Fb_webhook: event logged:', event)
+
+                # Set up credentials
+                # Example code: https://github.com/gsuitedevs/python-samples/blob/master/calendar/quickstart/quickstart.py
+                bot = json.loads(os.environ['GOOGLE_BOT'])
+                creds = Credentials.from_service_account_info(bot)
+                service = build('calendar', 'v3', credentials=creds)
+
+                # Convert facebook event info to google calendar format
+                eventInfo = result.json()
+                event = {
+                    'summary': eventInfo.get('name'),
+                    'location': eventInfo.get('place', {}).get('name'),
+                    'description': eventInfo.get('description'),
+                    'start': {
+                        'dateTime': eventInfo.get('start_time'),
+                    },
+                    'end': {
+                        'dateTime': eventInfo.get('end_time'),
+                    }
+                }
+
+                # Creat and log event
+                created = service.events().insert(calendarId=os.environ['GOOGLE_CALENDAR'],
+                                                  body=event).execute()
+                print('Fb_webhook: google calendar event created:', created.get('summary'))
+            else:
+                print('Fb_webhook: event failed:', event, result.status_code, result.json())
 
         return '', 200
 
 
 if __name__ == '__main__':
+    # TODO: add try/catch
+    # TODO: remove unused environment variables
     app.run()
