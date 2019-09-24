@@ -13,38 +13,42 @@ secrets = []
 @app.route('/asana-webhook', methods=['POST'])
 def asana_webhook():
 
-    # Complete creation of new webhook
-    if 'X-Hook-Secret' in request.headers:
+    # Just in case
+    try:
+        # Complete creation of new webhook
+        if 'X-Hook-Secret' in request.headers:
 
-        # Log new webhook
-        print('Asana_webhook: webhook added with secret', request.headers['X-Hook-Secret'])
+            # Log new webhook
+            print('Asana_webhook: webhook added with secret', request.headers['X-Hook-Secret'])
 
-        # TODO: keep secrets
+            # TODO: keep secrets
 
-        # Return secret to complete handshake
-        response = make_response('', 200)
-        response.headers['X-Hook-Secret'] = request.headers['X-Hook-Secret']
-        return response
+            # Return secret to complete handshake
+            response = make_response('', 200)
+            response.headers['X-Hook-Secret'] = request.headers['X-Hook-Secret']
+            return response
 
-    # Process the new events
-    elif 'X-Hook-Signature' in request.headers:
+        # Process the new events
+        elif 'X-Hook-Signature' in request.headers:
 
-        # Log request
-        print('Asana_webhook: new post received:', request.json)
+            # Log request
+            print('Asana_webhook: new post received:', request.json)
 
-        # TODO: verify request
+            # TODO: verify request
 
-        # Find new events
-        for event in request.json.get('events'):
+            # Find new events
+            for event in request.json.get('events'):
 
-            # Check user, resource type, parent type, and task ID
-            user = event.get('user', {}).get('gid') if event.get('user') else None
-            resourceSubtype = event.get('resource', {}).get('resource_subtype')
-            isTask = event.get('parent').get('resource_type') if event.get('parent') else None
-            task = event.get('parent').get('gid') if event.get('parent') else None
+                # Check user, resource type, parent type, and task ID
+                user = event.get('user', {}).get('gid') if event.get('user') else None
+                resourceSubtype = event.get('resource', {}).get('resource_subtype')
+                isTask = event.get('parent').get('resource_type') if event.get('parent') else None
+                task = event.get('parent').get('gid') if event.get('parent') else None
 
-            if user == os.environ['ASANA_SELF'] and resourceSubtype == 'added_to_project' \
-                    and isTask == 'task':
+                # Check to make sure correct event
+                if user != os.environ['ASANA_SELF'] or resourceSubtype != 'added_to_project' \
+                        or isTask != 'task':
+                    continue
 
                 # Log new task
                 print('Asana_webhook: new task found:', task)
@@ -58,67 +62,71 @@ def asana_webhook():
                 result = requests.put(url, data=data, headers=headers)
 
                 # Print result
-                # TODO: log error
                 if result.ok:
                     print('Asana_webhook: new task assigned:', task)
                 else:
+                    # TODO: raise error here
                     print('Asana_webhook: failed to assign task:', task, result.status_code, result.json())
 
-        return '', 200
+    # Log all errors
+    except Exception as e:
+        print('Asana_webhook: error:', e)
 
-    # Error if neither header exists
-    else:
-        print('Asana_webhook: neither secret nor signature was found')
-        raise KeyError
+    # Return success regardless
+    return '', 200
 
 
 @app.route('/fb-webhook', methods=['GET', 'POST'])
 def fb_webhook():
 
-    # Complete creation of new webhook
-    if request.method == 'GET' and request.args.get('hub.mode') == 'subscribe':
+    # Just in case
+    try:
 
-        # Log new webhook
-        challenge = request.args.get('hub.challenge')
-        print('Fb_webhook: webhook added with challenge', challenge)
+        # Complete creation of new webhook
+        if request.method == 'GET' and request.args.get('hub.mode') == 'subscribe':
 
-        # Return the challenge
-        return challenge, 200
+            # Log new webhook
+            challenge = request.args.get('hub.challenge')
+            print('Fb_webhook: webhook added with challenge', challenge)
 
-    # Process new events
-    elif request.method == 'POST' and request.json.get('entry'):
+            # Return the challenge
+            return challenge, 200
 
-        # TODO: verify request
+        # Process new events
+        elif request.method == 'POST' and request.json.get('entry'):
 
-        # Process each event
-        changes = [change for event in request.json.get('entry') for change in event.get('changes')]
+            # TODO: verify request
 
-        # Process each change
-        for change in changes:
+            # Process each event
+            changes = [change for event in request.json.get('entry') for change in event.get('changes')]
 
-            # Get event ID, action, and field
-            event = change.get('value', {}).get('event_id')
-            verb = change.get('value', {}).get('verb')
-            field = change.get('field')
+            # Process each change
+            for change in changes:
 
-            # Confirm expected fields before continuing
-            if not event or verb != 'accept' or field != 'events':
-                continue
+                # Get event ID, action, and field
+                event = change.get('value', {}).get('event_id')
+                verb = change.get('value', {}).get('verb')
+                field = change.get('field')
 
-            # Log new event
-            print('Fb_webhook: new event found:', event)
+                # Confirm expected fields before continuing
+                if not event or verb != 'accept' or field != 'events':
+                    continue
 
-            # Set up get request
-            # TODO: refresh token
-            url = 'https://graph.facebook.com/v3.3/' + event
-            headers = {'Authorization': 'Bearer ' + os.environ['FB_USER']}
+                # Log new event
+                print('Fb_webhook: new event found:', event)
 
-            # Query for more information about the event
-            result = requests.get(url, headers=headers)
+                # Set up get request
+                # TODO: refresh token
+                url = 'https://graph.facebook.com/v3.3/' + event
+                headers = {'Authorization': 'Bearer ' + os.environ['FB_USER']}
 
-            # Process the query
-            # TODO: log error
-            if result.ok:
+                # Query for more information about the event
+                result = requests.get(url, headers=headers)
+
+                # Process the query
+                if not result.ok:
+                    # TODO: raise error
+                    print('Fb_webhook: event failed:', event, result.status_code, result.json())
 
                 # Log success
                 print('Fb_webhook: event logged:', event)
@@ -145,15 +153,18 @@ def fb_webhook():
 
                 # Creat and log event
                 created = service.events().insert(calendarId=os.environ['GOOGLE_CALENDAR'],
-                                                  body=event).execute()
+                                                body=event).execute()
+                # TODO: check for error here
                 print('Fb_webhook: google calendar event created:', created.get('summary'))
-            else:
-                print('Fb_webhook: event failed:', event, result.status_code, result.json())
 
-        return '', 200
+    # Log all errors
+    except Exception as e:
+        print('Fb_webhook: error:', e)
+
+    # Return success regardless
+    return '', 200
 
 
+# Run Flask server
 if __name__ == '__main__':
-    # TODO: add try/catch
-    # TODO: remove unused environment variables
     app.run()
