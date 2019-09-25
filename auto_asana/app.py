@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import os
 import requests
@@ -7,7 +9,6 @@ from google.oauth2.service_account import Credentials
 
 
 app = Flask(__name__)
-secrets = []
 
 
 @app.route('/asana-webhook', methods=['POST'])
@@ -19,13 +20,18 @@ def asana_webhook():
         if 'X-Hook-Secret' in request.headers:
 
             # Log new webhook
-            print('Asana_webhook: webhook added with secret', request.headers['X-Hook-Secret'])
+            secret = request.headers['X-Hook-Secret']
+            print('Asana_webhook: webhook added with secret', secret)
 
-            # TODO: keep secrets
+            # Record secret
+            # Cannot use global variable, so using this for now
+            f = open('secrets.txt', 'a+')
+            f.write(';%s' % secret)
+            f.close()
 
             # Return secret to complete handshake
             response = make_response('', 200)
-            response.headers['X-Hook-Secret'] = request.headers['X-Hook-Secret']
+            response.headers['X-Hook-Secret'] = secret
             return response
 
         # Process the new events
@@ -34,7 +40,27 @@ def asana_webhook():
             # Log request
             print('Asana_webhook: new post received:', request.json)
 
-            # TODO: verify request
+            # Get correct signature to verify request with
+            # Example code: https://github.com/Asana/devrel-examples/blob/master/python/webhooks/webhook_inspector.py
+            correctSig = request.headers["X-Hook-Signature"]
+
+            # Get secrets of registered webhooks
+            f = open('secrets.txt', 'r')
+            secrets = f.readline().split(';')
+            f.close()
+
+            # Compare signatures
+            match = []
+            for secret in secrets:
+                encoded = secret.encode('ascii', 'ignore')
+                sig = hmac.new(encoded, msg=request.data, digestmod=hashlib.sha256).hexdigest()
+                match.append(hmac.compare_digest(sig, correctSig))
+
+            # Check if any matched
+            if any(match):
+                print('Asana_webhook: received digest matches')
+            else:
+                raise Exception('received digest does not match')
 
             # Find new events
             for event in request.json.get('events'):
@@ -65,8 +91,8 @@ def asana_webhook():
                 if result.ok:
                     print('Asana_webhook: new task assigned:', task)
                 else:
-                    # TODO: raise error here
-                    print('Asana_webhook: failed to assign task:', task, result.status_code, result.json())
+                    errorMsg = 'failed to assign task: %s %s %s' % (task, result.status_code, result.json())
+                    raise Exception(errorMsg)
 
     # Log all errors
     except Exception as e:
