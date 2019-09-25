@@ -5,18 +5,22 @@ from dotenv import load_dotenv
 
 def main():
 
-    # Get workspaces
+    # Get asana workspaces
     workspaces = get_asana_workspaces()
     projects = get_asana_projects(workspaces)
     webhooks = get_asana_webhooks(workspaces)
 
-    # Delete original webhooks
-    delete_webhooks(webhooks)
+    # Delete original asana webhooks
+    delete_asana_webhooks(webhooks)
 
-    # Get new webhooks
+    # Get new asana webhooks
     interested = os.getenv('ASANA_INTERESTED').split(';')
     projects = filter(lambda project: project['name'] in interested, projects)
-    add_webhooks(projects)
+    add_asana_webhooks(projects)
+
+    # Reset fb webhook for events
+    delete_fb_webhook()
+    add_fb_webhook()
 
 
 def get_asana_workspaces():
@@ -58,7 +62,7 @@ def get_asana_webhooks(workspaces):
     return webhooks
 
 
-def delete_webhooks(webhooks):
+def delete_asana_webhooks(webhooks):
 
     for webhook in webhooks:
         webhookUrl = 'https://app.asana.com/api/1.0/webhooks/' + webhook['gid']
@@ -70,7 +74,7 @@ def delete_webhooks(webhooks):
             print('Failure deleting webhook %s' % webhook['gid'])
 
 
-def add_webhooks(projects):
+def add_asana_webhooks(projects):
 
     for project in projects:
 
@@ -90,6 +94,38 @@ def add_webhooks(projects):
         else:
             print('Failure creating webhook for %s %s due to %s' %
                   (project['name'], project['gid'], result.reason))
+
+
+def delete_fb_webhook():
+
+    # Set up variables
+    webhookUrl = "https://graph.facebook.com/v4.0/{}/subscriptions".format(os.getenv('FB_APP'))
+    headers = {'Authorization': 'Bearer {}'.format(os.getenv('FB_TOKEN'))}
+
+    if requests.delete(webhookUrl, headers=headers).ok:
+        print('Deleted fb webhook')
+    else:
+        print('Failure deleting fb webhook')
+
+
+def add_fb_webhook():
+
+    # Set up variables
+    webhookUrl = "https://graph.facebook.com/v4.0/{}/subscriptions".format(os.getenv('FB_APP'))
+    headers = {'Authorization': 'Bearer {}'.format(os.getenv('FB_TOKEN'))}
+    data = {
+        'object': 'user',
+        'callback_url': os.getenv('FB_TARGET'),
+        'fields': 'events',
+        'verify_token': 'test'
+    }
+
+    # Do request
+    result = requests.post(webhookUrl, data=data, headers=headers)
+    if result.ok:
+        print('Created fb webhook')
+    else:
+        print('Failure creating fb webhook')
 
 
 if __name__ == '__main__':
