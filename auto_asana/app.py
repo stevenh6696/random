@@ -91,7 +91,9 @@ def asana_webhook():
                 if result.ok:
                     print('Asana_webhook: new task assigned:', task)
                 else:
-                    errorMsg = 'failed to assign task: %s %s %s' % (task, result.status_code, result.json())
+                    errorMsg = 'failed to assign task: %s %s %s' % (task,
+                                                                    result.status_code,
+                                                                    result.json())
                     raise Exception(errorMsg)
 
     # Log all errors
@@ -121,10 +123,21 @@ def fb_webhook():
         # Process new events
         elif request.method == 'POST' and request.json.get('entry'):
 
-            # TODO: verify request
+            # Calculate own signature
+            encodedSecret = os.getenv('FB_SECRET').encode('ascii', 'ignore')
+            encodedMsg = request.data.decode('UTF-8').encode('unicode-escape')
+            sig = hmac.new(encodedSecret, msg=encodedMsg, digestmod=hashlib.sha1).hexdigest()
+
+            # Verify with correct signature
+            correctSig = request.headers["X-Hub-Signature"][5:]
+            if hmac.compare_digest(sig, correctSig):
+                print('Fb_webhook: received digest matches')
+            else:
+                raise Exception('received digest does not match')
 
             # Process each event
-            changes = [change for event in request.json.get('entry') for change in event.get('changes')]
+            entries = request.json.get('entry')
+            changes = [change for event in entries for change in event.get('changes')]
 
             # Process each change
             for change in changes:
@@ -151,8 +164,10 @@ def fb_webhook():
 
                 # Process the query
                 if not result.ok:
-                    # TODO: raise error
-                    print('Fb_webhook: event failed:', event, result.status_code, result.json())
+                    errorMsg = 'event retrieval failed: %s %s %s' % (event,
+                                                                     result.status_code,
+                                                                     result.json())
+                    raise Exception(errorMsg)
 
                 # Log success
                 print('Fb_webhook: event logged:', event)
@@ -179,7 +194,7 @@ def fb_webhook():
 
                 # Creat and log event
                 created = service.events().insert(calendarId=os.environ['GOOGLE_CALENDAR'],
-                                                body=event).execute()
+                                                  body=event).execute()
                 # TODO: check for error here
                 print('Fb_webhook: google calendar event created:', created.get('summary'))
 
