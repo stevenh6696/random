@@ -5,6 +5,7 @@ import os
 import requests
 from flask import Flask, request, make_response
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from google.oauth2.service_account import Credentials
 
 
@@ -192,11 +193,17 @@ def fb_webhook():
                     }
                 }
 
-                # Creat and log event
-                created = service.events().insert(calendarId=os.environ['GOOGLE_CALENDAR'],
-                                                  body=event).execute()
-                # TODO: check for error here
-                print('Fb_webhook: google calendar event created:', created.get('summary'))
+                # Create and log event
+                try:
+                    created = service.events().insert(calendarId=os.environ['GOOGLE_CALENDAR'],
+                                                      body=event).execute()
+                    print('Fb_webhook: google calendar event created:', created.get('summary'))
+                except HttpError as e:
+                    errorInfo = json.loads(e.content.decode('UTF-8'))
+                    errorCode = errorInfo.get('error', {}).get('code')
+                    errorMsg = errorInfo.get('error', {}).get('message')
+                    raise Exception('google calendar event creation failed: %s %s' % (errorCode,
+                                                                                      errorMsg))
 
     # Log all errors
     except Exception as e:
