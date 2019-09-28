@@ -1,8 +1,10 @@
+import datetime
 import hashlib
 import hmac
 import json
 import os
 import requests
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, request, make_response
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -10,8 +12,10 @@ from google.oauth2.service_account import Credentials
 
 
 app = Flask(__name__)
+scheduler = BackgroundScheduler()
 
 
+# Assign new asana tasks to self
 @app.route('/asana-webhook', methods=['POST'])
 def asana_webhook():
 
@@ -25,7 +29,7 @@ def asana_webhook():
             print('Asana_webhook: webhook added with secret', secret)
 
             # Record secret
-            # Cannot use global variable, so using this for now
+            # TODO: Cannot use global variable, so using this for now
             f = open('secrets.txt', 'a+')
             f.write(';%s' % secret)
             f.close()
@@ -105,6 +109,7 @@ def asana_webhook():
     return '', 200
 
 
+# Add interested events from facebook to a google calendar
 @app.route('/fb-webhook', methods=['GET', 'POST'])
 def fb_webhook():
 
@@ -156,7 +161,7 @@ def fb_webhook():
                 print('Fb_webhook: new event found:', event)
 
                 # Set up get request
-                # TODO: refresh token
+                # FIXME: token currently needs to be refreshed every 2 months manually
                 url = 'https://graph.facebook.com/v3.3/' + event
                 headers = {'Authorization': 'Bearer ' + os.environ['FB_USER']}
 
@@ -213,6 +218,65 @@ def fb_webhook():
     return '', 200
 
 
-# Run Flask server
+# Query for upcoming asana tasks and move to correct section
+@scheduler.scheduled_job('interval', start_date='1970-01-01 00:00:00', days=1)
+def asana_upcoming():
+
+    try:
+        # Get all tasks in future section
+        print('Asana_upcoming: starting query')
+        sectionUrl = 'https://app.asana.com/api/1.0/sections/{}/tasks'.format(os.environ['ASANA_FUTURE'])
+        params = {'completed_since': 'now'}
+        headers = {'Authorization': 'Bearer ' + os.environ['ASANA_TOKEN']}
+
+        # Peform query
+        result = requests.get(sectionUrl, params=params, headers=headers)
+        if not result.ok:
+            return
+
+        # Query for information for each task
+        nextWeek = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(weeks=1)
+        for task in result.json().get('data'):
+            name = task.get('name')
+            gid = task.get('gid')
+            taskUrl = 'https://app.asana.com/api/1.0/tasks/{}'.format(gid)
+            taskInfo = requests.get(taskUrl, headers=headers)
+
+            # Skip if failed
+            if not taskInfo.ok:
+                print('Asana_upcoming: error: task info query failed for task %s' % gid)
+                continue
+
+            # Get due date for task if it exists
+            taskDue = taskInfo.json().get('data', {}).get('due_on')
+            if not taskDue:
+                continue
+
+            # Skip if due date is more than a week later
+            taskDueObj = datetime.datetime.strptime(taskDue + '-+0000', '%Y-%m-%d-%z')
+            if taskDueObj > nextWeek:
+                continue
+
+            # Move sections
+            assignUrl = 'https://app.asana.com/api/1.0/tasks/{}/addProject'.format(gid)
+            data = {
+                'project': os.environ['ASANA_LIFE'],
+                'section': os.environ['ASANA_UPCOMING']
+            }
+            assignResult = requests.post(assignUrl, data=data, headers=headers)
+
+            # Check result of assignment
+            if assignResult.ok:
+                print('Asana_upcoming: moved task %s %s' % (name, gid))
+            else:
+                print('Asana_upcoming: error: failed to move task %s %s' % (name, gid))
+
+    # Log all errors
+    except Exception as e:
+        print('Asana_upcoming: error:', e)
+
+
+# Run scheduler and server
 if __name__ == '__main__':
+    scheduler.start()
     app.run()
