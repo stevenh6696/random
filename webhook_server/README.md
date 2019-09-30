@@ -32,11 +32,12 @@ Move tasks from other sections to "upcoming" section on kanban according to due 
 ### Steps
 
 1. [Get personal access token](https://asana.com/developers/documentation/getting-started/auth#personal-access-token) from asana to do all tasks on behalf of self
-2. Query for [tasks in a section](https://asana.com/developers/api-reference/tasks#query)
+2. Set time-based trigger using simple Azure logic app
+3. Query for [tasks in a section](https://asana.com/developers/api-reference/tasks#query)
    - Premium users are able to perform more refined queries
-3. [Get more information](https://asana.com/developers/api-reference/tasks#get) about each task
-4. Parse for events due less than a week later
-5. [Move the tasks](https://asana.com/developers/api-reference/tasks#projects) to a new section
+4. [Get more information](https://asana.com/developers/api-reference/tasks#get) about each task
+5. Parse for events due less than a week later
+6. [Move the tasks](https://asana.com/developers/api-reference/tasks#projects) to a new section
 
 ## Facebook interested events calendar
 

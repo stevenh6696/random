@@ -4,7 +4,6 @@ import hmac
 import json
 import os
 import requests
-from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, request, make_response
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -12,7 +11,6 @@ from google.oauth2.service_account import Credentials
 
 
 app = Flask(__name__)
-scheduler = BackgroundScheduler()
 
 
 # Assign new asana tasks to self
@@ -219,7 +217,7 @@ def fb_webhook():
 
 
 # Query for upcoming asana tasks and move to correct section
-@scheduler.scheduled_job('interval', start_date='1970-01-01 00:00:00', days=1)
+@app.route('/asana-upcoming', methods=['POST'])
 def asana_upcoming():
 
     try:
@@ -235,7 +233,7 @@ def asana_upcoming():
             return
 
         # Query for information for each task
-        nextWeek = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(weeks=1)
+        nextWeek = datetime.datetime.now() + datetime.timedelta(weeks=1)
         for task in result.json().get('data'):
             name = task.get('name')
             gid = task.get('gid')
@@ -253,7 +251,7 @@ def asana_upcoming():
                 continue
 
             # Skip if due date is more than a week later
-            taskDueObj = datetime.datetime.strptime(taskDue + '-+0000', '%Y-%m-%d-%z')
+            taskDueObj = datetime.datetime.strptime(taskDue, '%Y-%m-%d')
             if taskDueObj > nextWeek:
                 continue
 
@@ -275,8 +273,10 @@ def asana_upcoming():
     except Exception as e:
         print('Asana_upcoming: error:', e)
 
+    # Return success regardless
+    return '', 200
 
-# Run scheduler and server
+
+# Run Flask server
 if __name__ == '__main__':
-    scheduler.start()
     app.run()
